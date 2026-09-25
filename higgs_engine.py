@@ -1,10 +1,10 @@
-"""Движок Higgs Audio v3 TTS.
+"""Higgs Audio v3 TTS Engine.
 
-Загружает transformers-порт multimodalart/higgs-audio-v3-tts-4b-transformers,
-авто-точность (bf16/8/4-бит через bitsandbytes по VRAM), generate_speech,
-длинная форма с переносом голоса и мульти-спикер склейка.
+Loads transformers port multimodalart/higgs-audio-v3-tts-4b-transformers,
+auto precision (bf16/8/4-bit via bitsandbytes according to VRAM), generate_speech,
+long-form with voice carry-over, and multi-speaker concatenation.
 
-Тяжёлые импорты ленивые (внутри функций) — mock-режим и UI поднимаются без torch.
+Heavy imports are lazy (inside functions) — mock mode and UI can start without torch.
 """
 import os
 
@@ -14,10 +14,10 @@ _MOCK = bool(os.environ.get("HIGGS_UI_MOCK"))
 _model = None
 _tok = None
 
-# Клон: референс кодируется ЦЕЛИКОМ. Пресеты бывают до 300с → prefill на тысячи аудио-токенов
-# → тормоза/залипание/мусор; бьёт и по подкасту, и по аудиокниге (общий путь generate). Режем.
+# Cloning: reference is encoded IN FULL. Presets can be up to 300s -> prefill with thousands of audio tokens
+# -> latency/stalling/degraded audio; affects both podcast and audiobook (shared generate path). We trim it.
 REF_MAX_SEC = 30
-_REF_CACHE = {}  # path → (mtime, codes_TN, trimmed): один голос не перекодируем повторно
+_REF_CACHE = {}  # path -> (mtime, codes_TN, trimmed): avoid re-encoding the same voice multiple times
 
 
 def detect_device():
@@ -30,27 +30,27 @@ def detect_device():
 
 def device_info():
     if _MOCK:
-        return "MOCK UI (без модели)"
+        return "MOCK UI (no model)"
     try:
         dev, name, vram = detect_device()
     except Exception:
         return "CPU"
-    return f"{name} | VRAM {vram:.1f} ГБ" if dev == "cuda" else "CPU (медленно)"
+    return f"{name} | VRAM {vram:.1f} GB" if dev == "cuda" else "CPU (slow)"
 
 
-_forced_precision = None  # выбор квантизации из UI-дропдауна
+_forced_precision = None  # UI quantization choice
 
 
 def set_precision(p):
-    """UI выбор квантизации: '4bit' / '8bit' / 'bf16'. Выгружает модель — перезагрузится в новой точности."""
+    """UI quantization choice: '4bit' / '8bit' / 'bf16'. Unloads model — will reload in new precision."""
     global _forced_precision
     _forced_precision = p if p in ("4bit", "8bit", "bf16") else None
     unload_tts()
 
 
 def auto_precision(vram_gb, device):
-    # bf16 по умолчанию (чище; на 24 ГБ влезает свободно). nf4/8bit — выбором в UI.
-    # Приоритет: UI-выбор > env HIGGS_TTS_PRECISION > дефолт.
+    # bf16 by default (cleaner; fits easily on 24 GB). nf4/8bit via UI selection.
+    # Priority: UI choice > env HIGGS_TTS_PRECISION > default.
     pick = _forced_precision or os.environ.get("HIGGS_TTS_PRECISION", "").strip().lower()
     if pick in ("bf16", "8bit", "4bit"):
         return pick if device == "cuda" else "cpu"
@@ -69,10 +69,10 @@ def get_tts(precision=None):
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     device, name, vram = detect_device()
     precision = precision or auto_precision(vram, device)
-    print(f"[higgs] загрузка TTS ({precision}) на {name}...")
+    print(f"[higgs] loading TTS ({precision}) on {name}...")
     quant = None
-    # Голову/эмбеддинг аудио-кодов держим ВНЕ кванта: они tied и предсказывают стоп-токен (EOC);
-    # под nf4 голова деградирует → модель не ловит конец → генерит вразнос (залипание).
+    # Keep audio code head and embedding OUTSIDE quantization: they are tied and predict stop tokens (EOC);
+    # under nf4 the head degrades -> model misses the end -> generation runs away / stalls.
     skip = ["audio_head", "audio_embedding"]
     if precision == "4bit":
         quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
@@ -85,34 +85,34 @@ def get_tts(precision=None):
     if quant is not None:
         kw["quantization_config"] = quant
         kw["device_map"] = "auto"
-    try:  # flash-attention 2, если установлена (ускоритель из install.bat)
+    try:  # flash-attention 2 if installed (accelerator from install.bat)
         _model = AutoModelForCausalLM.from_pretrained(TTS_REPO, attn_implementation="flash_attention_2", **kw)
     except Exception as e:
-        print(f"[higgs] flash_attention_2 недоступна ({e}); стандартный attention")
+        print(f"[higgs] flash_attention_2 unavailable ({e}); using standard attention")
         _model = AutoModelForCausalLM.from_pretrained(TTS_REPO, **kw)
     if quant is None and device == "cuda":
         _model = _model.to("cuda")
     _model.eval()
     try:
-        _model.get_audio_codec()  # прогрев fp32-кодека
+        _model.get_audio_codec()  # warm up fp32 codec
     except Exception:
         pass
     if device == "cuda":
         try:
-            torch.set_float32_matmul_precision("high")  # TF32 — безопасно и бесплатно
+            torch.set_float32_matmul_precision("high")  # TF32 — safe and free
         except Exception:
             pass
-    # torch.compile бэкбона: ~2.4x (dynamic=True). КРИТИЧНО: компиляция должна происходить в ГЛАВНОМ
-    # потоке (прогрев на старте, см. prewarm() в app.py) — компиляция dynamo/inductor в рабочем потоке
-    # gradio роняет процесс (особенно на клон-пути). Нужны Python-заголовки (install.bat ставит dev.msi).
+    # torch.compile backbone: ~2.4x (dynamic=True). CRITICAL: compilation must happen in the MAIN
+    # thread (startup warmup, see prewarm() in app.py) — dynamo/inductor compilation in gradio worker
+    # thread crashes process (especially on clone path). Requires Python headers (install.bat installs dev.msi).
     if device == "cuda" and precision == "bf16" and os.environ.get("HIGGS_NO_COMPILE", "").lower() not in ("1", "true", "yes"):
         try:
             import torch._dynamo
-            torch._dynamo.config.suppress_errors = True  # сбой компиляции в потоке → откат на eager, НЕ краш
+            torch._dynamo.config.suppress_errors = True  # compilation failure in thread -> fallback to eager, NOT crash
             _model.model = torch.compile(_model.model, dynamic=True)
-            print("[higgs] torch.compile (dynamic) ВКЛ — ~2x (прогрев компиляции на старте)")
+            print("[higgs] torch.compile (dynamic) ON — ~2x (warmup compilation on startup)")
         except Exception as e:
-            print(f"[higgs] torch.compile недоступен ({e}); без компиляции")
+            print(f"[higgs] torch.compile unavailable ({e}); running uncompiled")
     return _model
 
 
@@ -122,7 +122,7 @@ _CANCEL = False
 def request_cancel():
     global _CANCEL
     _CANCEL = True
-    print("[gen] STOP ОТМЕНА — прерываю генерацию на текущем токене", flush=True)
+    print("[gen] STOP CANCEL — aborting generation at current token", flush=True)
 
 
 def clear_cancel():
@@ -135,7 +135,7 @@ def cancelled():
 
 
 def unload_tts():
-    """Выгрузить TTS из памяти (для последовательной загрузки с LLM-режиссёром)."""
+    """Unload TTS from memory (for sequential loading with LLM director)."""
     global _model, _tok
     _model = None
     _tok = None
@@ -155,9 +155,9 @@ def _load_ref(path):
 
 
 def _ref_codes(m, path):
-    """Референс → коды [T,N]: обрезка до REF_MAX_SEC + кэш по (path, mtime).
-    Возвращает (codes_cpu, trimmed). Без обрезки длинный пресет (до 300с) кодируется целиком →
-    prefill на тысячи токенов → клон тормозит/залипает (и тащит за собой подкаст с аудиокнигой)."""
+    """Reference -> codes [T,N]: trim to REF_MAX_SEC + cache by (path, mtime).
+    Returns (codes_cpu, trimmed). Without trimming, long presets (up to 300s) are encoded in full ->
+    thousands of prefill tokens -> voice cloning slows down/stalls (affecting podcast and audiobook)."""
     import os
     try:
         mt = os.path.getmtime(path)
@@ -171,18 +171,18 @@ def _ref_codes(m, path):
     trimmed = wav.shape[-1] > cap
     if trimmed:
         wav = wav[:cap]
-        print(f"[gen] референс {os.path.basename(path)} обрезан до {REF_MAX_SEC}с (был длинный)", flush=True)
+        print(f"[gen] reference {os.path.basename(path)} trimmed to {REF_MAX_SEC}s (was too long)", flush=True)
     codes = m._encode_reference(wav, sr).cpu()
     _REF_CACHE[path] = (mt, codes, trimmed)
     return codes, trimmed
 
 
-_FRAMES_PER_SEC = None  # калибруется по факту первой генерации — для оценки секунд аудио на лету
+_FRAMES_PER_SEC = None  # calibrated after first generation — for on-the-fly audio seconds estimation
 
 
 def _modeling(m):
-    """Модуль remote-code модели (apply_delay_pattern / reverse_delay_pattern / _SamplerState / _sampler_step).
-    torch.compile оборачивает m.model, не сам m — поэтому type(m).__module__ остаётся модулем Higgs."""
+    """Model remote-code module (apply_delay_pattern / reverse_delay_pattern / _SamplerState / _sampler_step).
+    torch.compile wraps m.model, not m itself — so type(m).__module__ remains the Higgs module."""
     import sys
     return sys.modules[type(m).__module__]
 
@@ -190,17 +190,17 @@ def _modeling(m):
 def _generate_stream(m, tok, text, *, reference_audio=None, reference_sample_rate=None,
                      reference_codes=None, reference_text=None, max_new_tokens=2048,
                      temperature=1.0, top_p=None, top_k=None, label="", attempt=(1, 1)):
-    """Точная копия HiggsMultimodalQwen3.generate_speech, но цикл наш →
-    (а) живой прогресс по фреймам в терминал (tqdm); (б) отмена НА УРОВНЕ инференса —
-    флаг _CANCEL проверяется каждый токен и рвёт реальный AR-цикл немедленно.
+    """Exact replica of HiggsMultimodalQwen3.generate_speech, but with custom loop ->
+    (a) live per-frame progress in terminal (tqdm); (b) cancellation AT INFERENCE LEVEL —
+    _CANCEL flag is checked every token to break the actual AR loop immediately.
 
-    Возвращает (audio_tensor_cpu_f32 | пустой, was_cancelled: bool).
+    Returns (audio_tensor_cpu_f32 | empty, was_cancelled: bool).
     """
     global _FRAMES_PER_SEC
     import time
     import torch
 
-    # Резолв внутренностей модели; если remote-API сдвинулся — честный фоллбек на штатный метод.
+    # Resolve model internals; if remote API changes — fallback to standard method.
     try:
         mod = _modeling(m)
         apply_delay_pattern = mod.apply_delay_pattern
@@ -211,7 +211,7 @@ def _generate_stream(m, tok, text, *, reference_audio=None, reference_sample_rat
         _ = (m._encode_reference, m._build_prompt_ids, m._prefill_embeds, m._decode_codes,
              m.audio_head, m.audio_embedding, m.model)
     except Exception as e:
-        print(f"[gen] внутренний цикл недоступен ({e}); штатный generate_speech без прогресса", flush=True)
+        print(f"[gen] internal loop unavailable ({e}); falling back to default generate_speech without progress", flush=True)
         kw = dict(reference_text=reference_text, max_new_tokens=max_new_tokens,
                   temperature=temperature, top_p=top_p, top_k=top_k)
         if reference_codes is not None:
@@ -221,8 +221,8 @@ def _generate_stream(m, tok, text, *, reference_audio=None, reference_sample_rat
             kw["reference_sample_rate"] = reference_sample_rate
         return m.generate_speech(text, tok, **kw), False
 
-    att = f" · попытка {attempt[0]}/{attempt[1]}" if attempt[1] > 1 else ""
-    print(f"[gen] >> синтез: {label}{att}", flush=True)
+    att = f" · attempt {attempt[0]}/{attempt[1]}" if attempt[1] > 1 else ""
+    print(f"[gen] >> synthesis: {label}{att}", flush=True)
 
     with torch.no_grad():
         delayed_ref = None
@@ -250,13 +250,13 @@ def _generate_stream(m, tok, text, *, reference_audio=None, reference_sample_rat
         t0 = time.time()
         try:
             from tqdm import tqdm
-            bar = tqdm(total=int(max_new_tokens), unit="frame", desc="[gen] озвучка",
+            bar = tqdm(total=int(max_new_tokens), unit="frame", desc="[gen] tts",
                        dynamic_ncols=True, leave=False, ascii=True)
         except Exception:
             bar = None
 
         for step in range(int(max_new_tokens)):
-            if _CANCEL:  # ← ОТМЕНА НА УРОВНЕ ИНФЕРЕНСА: рвём реальный цикл генерации
+            if _CANCEL:  # <-- CANCELLATION AT INFERENCE LEVEL: interrupt actual generation loop
                 cancelled_mid = True
                 break
             logits_NV = m.audio_head(hidden_last).to(torch.float32)[0]
@@ -268,10 +268,10 @@ def _generate_stream(m, tok, text, *, reference_audio=None, reference_sample_rat
             if bar is not None:
                 bar.update(1)
                 if _FRAMES_PER_SEC and step % 16 == 0:
-                    bar.set_postfix_str(f"~{len(rows) / _FRAMES_PER_SEC:.1f}с аудио")
+                    bar.set_postfix_str(f"~{len(rows) / _FRAMES_PER_SEC:.1f}s audio")
             elif step % 64 == 0 and step:
                 el = time.time() - t0
-                print(f"[gen]   {step} фреймов · {step / max(el, 1e-3):.0f} фрейм/с", flush=True)
+                print(f"[gen]   {step} frames · {step / max(el, 1e-3):.0f} frames/s", flush=True)
 
             step_embed = m.audio_embedding(codes_N.unsqueeze(0)).unsqueeze(1)
             cache_pos = torch.tensor([position], device=m.device)
@@ -286,10 +286,10 @@ def _generate_stream(m, tok, text, *, reference_audio=None, reference_sample_rat
         el = time.time() - t0
 
         if cancelled_mid:
-            print(f"[gen] STOP прервано на {len(rows)} фреймах ({el:.1f}с)", flush=True)
+            print(f"[gen] STOP interrupted at {len(rows)} frames ({el:.1f}s)", flush=True)
             return torch.zeros(0, dtype=torch.float32), True
         if len(rows) < N:
-            print(f"[gen] пусто ({len(rows)} фреймов < {N})", flush=True)
+            print(f"[gen] empty ({len(rows)} frames < {N})", flush=True)
             return torch.zeros(0, dtype=torch.float32), False
 
         delayed_LN = torch.stack(rows, dim=0)
@@ -298,15 +298,15 @@ def _generate_stream(m, tok, text, *, reference_audio=None, reference_sample_rat
 
     sec = audio.shape[-1] / SR
     if sec > 0.05:
-        _FRAMES_PER_SEC = len(rows) / sec  # калибровка оценки секунд для следующих генераций
-    print(f"[gen] OK {len(rows)} фреймов -> {sec:.1f}с аудио за {el:.1f}с ({len(rows) / max(el, 1e-3):.0f} фрейм/с)",
+        _FRAMES_PER_SEC = len(rows) / sec  # calibrate seconds estimation for subsequent generations
+    print(f"[gen] OK {len(rows)} frames -> {sec:.1f}s audio in {el:.1f}s ({len(rows) / max(el, 1e-3):.0f} frames/s)",
           flush=True)
     return audio, False
 
 
 def generate(text, ref_audio=None, ref_text=None, temperature=1.0, top_p=0.95,
              top_k=50, max_new_tokens=2048, seed=-1):
-    """Озвучить один фрагмент. Возвращает (sr, np.float32[L]). ref_audio — путь к файлу."""
+    """Synthesize one fragment. Returns (sr, np.float32[L]). ref_audio — path to audio file."""
     import numpy as np
     text = (text or "").strip()
     if not text:
@@ -325,12 +325,12 @@ def generate(text, ref_audio=None, ref_text=None, temperature=1.0, top_p=0.95,
         ref_codes, trimmed = _ref_codes(m, ref_audio)
         kw["reference_codes"] = ref_codes
         if trimmed:
-            ref_text = None  # транскрипт пресета относится к ПОЛНОМУ аудио → с обрезанным не совпадёт
+            ref_text = None  # preset transcript belongs to FULL audio -> will not match trimmed audio
         if ref_text and ref_text.strip():
             kw["reference_text"] = ref_text.strip()
-    label = f"{len(text)} симв" + (" · клон по референсу" if ref_audio else "")
-    # Анти-разнос (как retry_badcase в VoxCPM2): если аудио неправдоподобно длинное для
-    # текста — модель пошла вразнос, перегенерируем (для случайного сида попытки разные).
+    label = f"{len(text)} chars" + (" · voice clone from reference" if ref_audio else "")
+    # Anti-runaway (like retry_badcase in VoxCPM2): if audio is unrealistically long for
+    # the text — model went runaway, retry (different seed on retry if random).
     fixed_seed = seed is not None and int(seed) >= 0
     limit_sec = 0.13 * max(len(text), 1) + 3.0
     attempts = 1 if fixed_seed else 3
@@ -342,18 +342,18 @@ def generate(text, ref_audio=None, ref_text=None, temperature=1.0, top_p=0.95,
         sec = (audio.shape[-1] if hasattr(audio, "shape") else len(audio)) / SR
         if sec <= limit_sec or a == attempts - 1:
             break
-        print(f"[gen] разнос {sec:.1f}s > {limit_sec:.1f}s — повтор {a + 2}/{attempts}", flush=True)
+        print(f"[gen] runaway {sec:.1f}s > {limit_sec:.1f}s — retry {a + 2}/{attempts}", flush=True)
     return SR, audio.detach().cpu().numpy().astype(np.float32)
 
 
-TARGET_LUFS = -16.0              # стандарт подкастов/TTS (EBU R128, Google Assistant)
-_PEAK_CEIL = 10 ** (-1.0 / 20)   # −1 dBFS — защита микса от клиппинга
-_MAX_GAIN = 10 ** (20.0 / 20)    # не разгонять тихий фрагмент сильнее +20 dB (мусор/тишина)
+TARGET_LUFS = -16.0              # podcast/TTS standard (EBU R128, Google Assistant)
+_PEAK_CEIL = 10 ** (-1.0 / 20)   # −1 dBFS — mix protection from clipping
+_MAX_GAIN = 10 ** (20.0 / 20)    # do not boost quiet fragments by more than +20 dB (noise/silence)
 
 
 def _loudness_normalize(x, sr=SR):
-    """Фрагмент → целевая громкость, чтобы спикеры в миксе звучали ровно (один не тише другого).
-    LUFS-метр BS.1770 (pyloudnorm) если доступен, иначе RMS-фоллбек на чистом numpy."""
+    """Fragment -> target loudness, so speakers in mix sound balanced (one not quieter than another).
+    BS.1770 LUFS meter (pyloudnorm) if available, otherwise RMS fallback using pure numpy."""
     import numpy as np
     x = np.asarray(x, dtype=np.float32)
     if x.size == 0:
@@ -366,7 +366,7 @@ def _loudness_normalize(x, sr=SR):
             return (x * min(gain, _MAX_GAIN)).astype(np.float32)
     except Exception:
         pass
-    rms = float(np.sqrt(np.mean(x ** 2)))   # фоллбек: RMS к ~−20 dBFS (ориентир для речи)
+    rms = float(np.sqrt(np.mean(x ** 2)))   # fallback: RMS to ~−20 dBFS (speech reference)
     if rms < 1e-6:
         return x
     return (x * min((10 ** (-20.0 / 20)) / rms, _MAX_GAIN)).astype(np.float32)
@@ -381,8 +381,8 @@ def _peak_limit(x, ceil=_PEAK_CEIL):
 
 
 def _concat(chunks, gap=0.3, normalize=True):
-    """Склейка фрагментов с паузой. normalize=True выравнивает громкость спикеров
-    (LUFS/RMS на фрагмент) и ставит пик-лимит −1 dBFS на итоговый микс."""
+    """Concatenate fragments with silence pause. normalize=True balances speaker loudness
+    (LUFS/RMS per fragment) and applies −1 dBFS peak limit on final mix."""
     import numpy as np
     chunks = [c for c in chunks if c is not None and len(c)]
     if not chunks:
@@ -400,7 +400,7 @@ def _concat(chunks, gap=0.3, normalize=True):
 
 
 def synth_longform(paragraphs, ref_audio=None, ref_text=None, **kw):
-    """Длинный текст по абзацам. Первый кусок задаёт голос, его аудио — референс для остальных."""
+    """Long text by paragraphs. First chunk sets voice, its audio serves as reference for the rest."""
     import tempfile
     import soundfile as sf
     chunks = []
@@ -408,21 +408,21 @@ def synth_longform(paragraphs, ref_audio=None, ref_text=None, **kw):
     paras = [p for p in paragraphs if p and p.strip()]
     for i, para in enumerate(paras):
         if _CANCEL:
-            print(f"[gen] STOP остановлено на чанке {i + 1}/{len(paras)}", flush=True)
+            print(f"[gen] STOP halted at chunk {i + 1}/{len(paras)}", flush=True)
             break
-        print(f"[gen] лонг-форм: чанк {i + 1}/{len(paras)}", flush=True)
+        print(f"[gen] long-form: chunk {i + 1}/{len(paras)}", flush=True)
         _, a = generate(para, ref_audio=chain_ref, ref_text=chain_txt, **kw)
         chunks.append(a)
         if i == 0 and not _MOCK and ref_audio is None and len(a):
             f = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            f.close()  # Windows: закрыть хэндл до повторного open в sf.write
+            f.close()  # Windows: close handle before re-opening in sf.write
             sf.write(f.name, a, SR)
             chain_ref, chain_txt = f.name, para
     return SR, _concat(chunks)
 
 
 def synth_turns(turns, gap=0.4, **kw):
-    """turns: [{'text','ref_audio','ref_text'}] — у каждого спикера свой голос через его референс."""
+    """turns: [{'text','ref_audio','ref_text'}] — each speaker gets their own voice via their reference."""
     chunks = []
     for t in turns:
         if _CANCEL:

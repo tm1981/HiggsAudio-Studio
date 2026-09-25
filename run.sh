@@ -111,7 +111,7 @@ setup_runtime_dirs() {
   export XDG_CACHE_HOME="$SCRIPT_DIR/cache"
   mkdir -p "$XDG_CACHE_HOME"
 
-  # HF_TOKEN: из переменной окружения или из файла .hf_token рядом со скриптом
+  # HF_TOKEN: from environment variable or from .hf_token file next to the script
   local token_file="$SCRIPT_DIR/.hf_token"
   if [[ -z "${HF_TOKEN:-}" && -f "$token_file" ]]; then
     HF_TOKEN="$(tr -d '[:space:]' < "$token_file")"
@@ -124,7 +124,7 @@ setup_runtime_dirs() {
     warn "Put your token in .hf_token or export HF_TOKEN=hf_xxx before running."
   fi
 
-  # Ускорённая загрузка моделей с HuggingFace через Xet
+  # Accelerated model downloads from Hugging Face via Xet
   export HF_XET_HIGH_PERFORMANCE=1
 
   if [[ -d "$SCRIPT_DIR/ffmpeg" ]]; then

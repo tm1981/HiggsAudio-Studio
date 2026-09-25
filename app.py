@@ -1,14 +1,14 @@
-"""Higgs Audio Studio — портативная сборка Nerual Dreming + Нейро-Софт.
+"""Higgs Audio Studio — portable build by Nerual Dreming + Neuro-Soft.
 
-Higgs Audio v3 TTS (100+ языков, клонирование) + AI-режиссёр текста (теги по смыслу) +
-мульти-спикерные режимы Подкаст и Аудиокнига. UI RU/EN, тёмная тема.
+Higgs Audio v3 TTS (100+ languages, cloning) + AI text director (meaning-based tags) +
+multi-speaker Podcast and Audiobook modes. Bilingual RU/EN UI, dark theme.
 """
 import os
 import re
 import sys
 import asyncio
 
-# Корень проекта в sys.path — embedded python не добавляет каталог скрипта
+# Project root in sys.path — embedded python does not add script directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -21,7 +21,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# Windows retry_open патч для anyio/aiofiles (PermissionError от антивируса)
+# Windows retry_open patch for anyio/aiofiles (PermissionError from antivirus)
 if sys.platform == "win32":
     try:
         import anyio
@@ -69,13 +69,13 @@ APP_NAME = "Higgs Audio Studio"
 DEVICE_INFO = eng.device_info()
 MODEL_CHOICES = list(dr.MODELS.keys())
 MAX_SPK = 4
-OWN_FILE = "— свой файл / own file —"
+OWN_FILE = "— upload file / own file —"
 
 CLOUD_VOICES_REPO = "Slait/russia_voices"
 
 
 # ----------------------------------------------------------------------------
-# Брендинг
+# Branding & Headers
 # ----------------------------------------------------------------------------
 _FLAG = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg"
 
@@ -109,8 +109,8 @@ def _brand(subtitle, credits, donate, donate_label):
     return f"""
 <div class="brand-header">
   <div class="lang-switcher">
-    <a href="?__lang=ru&amp;__theme=dark" class="lang-btn"><img src="{_FLAG}/1f1f7-1f1fa.svg" width="16" height="16"/>RU</a>
     <a href="?__lang=en&amp;__theme=dark" class="lang-btn"><img src="{_FLAG}/1f1ec-1f1e7.svg" width="16" height="16"/>EN</a>
+    <a href="?__lang=ru&amp;__theme=dark" class="lang-btn"><img src="{_FLAG}/1f1f7-1f1fa.svg" width="16" height="16"/>RU</a>
     <details class="donate-wrap"><summary class="lang-btn donate-btn"><img src="{_FLAG}/1fa99.svg" width="16" height="16"/>{donate_label}</summary>{donate}</details>
   </div>
   <div class="brand-box">
@@ -136,7 +136,7 @@ BRAND_HTML_EN = _brand(
     'Built by <a href="https://t.me/nerual_dreming" target="_blank">Nerual Dreming</a> — '
     'founder of <a href="https://artgeneration.me" target="_blank">ArtGeneration.me</a>, '
     'tech-blogger and neuro-evangelist. Channel '
-    '<a href="https://t.me/neuroport" target="_blank">Нейро-Софт</a> — portable AI builds.',
+    '<a href="https://t.me/neuroport" target="_blank">Neuro-Soft</a> — portable AI builds.',
     _DONATE_EN, "Donate",
 )
 
@@ -160,9 +160,59 @@ _PODFMT_EN = "**Script format:** one line per turn `Speaker 0: line` / `Speaker 
 _BOOKFMT_RU = "**Формат:** `Speaker 0:` — рассказчик, `Speaker 1+:` — персонажи. Разметь кнопкой или вручную, потом озвучь."
 _BOOKFMT_EN = "**Format:** `Speaker 0:` — narrator, `Speaker 1+:` — characters. Attribute with the button or by hand, then synthesize."
 
+TAG_DESC_EN = {
+    "affection": "Warmth, tenderness", "amusement": "Amusement, playful chuckle", "anger": "Anger",
+    "arousal": "Heightened arousal", "awe": "Awe, admiration", "bitterness": "Bitterness",
+    "confusion": "Confusion, perplexity", "contemplation": "Contemplation, reflection", "contentment": "Quiet contentment",
+    "determination": "Determination, firmness", "disgust": "Disgust", "elation": "Elation, joy",
+    "enthusiasm": "Enthusiasm, excitement", "fear": "Fear", "helplessness": "Helplessness",
+    "longing": "Longing, yearning", "pride": "Pride, confidence", "relief": "Relief",
+    "sadness": "Sadness", "shame": "Shame", "surprise": "Surprise",
+    "speed_very_slow": "Very slow (≈0.65×)", "speed_slow": "Slow (≈0.85×)",
+    "speed_fast": "Fast (≈1.2×)", "speed_very_fast": "Very fast (≈1.4×)",
+    "pitch_low": "Lower pitch (≈−3 semitones)", "pitch_high": "Higher pitch (≈+2.5 semitones)",
+    "expressive_high": "More expressive", "expressive_low": "Flatter, monotone",
+    "pause": "Pause ≈400–700 ms", "long_pause": "Long pause ≈700–1500 ms",
+    "singing": "Singing", "shouting": "Shouting, projection", "whispering": "Whispering",
+    "cough": "Cough (sound: ahem)", "laughter": "Laughter (ha-ha)", "crying": "Crying (sob)",
+    "screaming": "Screaming (aaah)", "burping": "Burping", "humming": "Humming (mmm)",
+    "sigh": "Sigh", "sniff": "Sniffing", "sneeze": "Sneeze (achoo)",
+}
+TAG_DESC_RU = {
+    "affection": "Теплота, нежность", "amusement": "Веселье, игривый смешок", "anger": "Гнев",
+    "arousal": "Обострённое желание", "awe": "Благоговение, восхищение", "bitterness": "Горечь",
+    "confusion": "Растерянность", "contemplation": "Задумчивость, рефлексия", "contentment": "Спокойное удовлетворение",
+    "determination": "Решимость, твёрдость", "disgust": "Отвращение", "elation": "Ликование, радость",
+    "enthusiasm": "Энтузиазм, воодушевление", "fear": "Страх", "helplessness": "Беспомощность",
+    "longing": "Тоска, томление", "pride": "Гордость, уверенность", "relief": "Облегчение",
+    "sadness": "Грусть", "shame": "Стыд", "surprise": "Удивление",
+    "speed_very_slow": "Очень медленно (≈0.65×)", "speed_slow": "Медленно (≈0.85×)",
+    "speed_fast": "Быстро (≈1.2×)", "speed_very_fast": "Очень быстро (≈1.4×)",
+    "pitch_low": "Ниже тон (≈−3 полутона)", "pitch_high": "Выше тон (≈+2.5 полутона)",
+    "expressive_high": "Выразительнее", "expressive_low": "Ровнее, монотоннее",
+    "pause": "Пауза ≈400–700 мс (по месту)", "long_pause": "Длинная пауза ≈700–1500 мс (по месту)",
+    "singing": "Пение", "shouting": "Крик, посыл голоса", "whispering": "Шёпот",
+    "cough": "Кашель (звук: кхм)", "laughter": "Смех (ха-ха)", "crying": "Плач (ыыы)",
+    "screaming": "Крик (ааа)", "burping": "Отрыжка", "humming": "Мычание (ммм)",
+    "sigh": "Вздох (эх)", "sniff": "Шмыганье носом", "sneeze": "Чихание (апчхи)",
+}
+
+_CAT_NAMES_EN = {"emotion": "😊 Emotions (sentence start)", "prosody": "🎵 Prosody",
+                 "style": "🎭 Style (sentence start)", "sfx": "🔊 Sounds (inline, attached)"}
+_CAT_NAMES_RU = {"emotion": "😊 Эмоции (в начало предложения)", "prosody": "🎵 Просодия",
+                 "style": "🎭 Стиль (в начало)", "sfx": "🔊 Звуки (по месту, рядом со звукоподражанием)"}
+
+TAGS_LEGEND_MD_EN = "\n\n".join(
+    f"**{_CAT_NAMES_EN[c]}**\n" + "\n".join(f"- `<|{c}:{v}|>` — {TAG_DESC_EN.get(v, '')}" for v in sorted(dr.WHITELIST[c]))
+    for c in ("emotion", "prosody", "style", "sfx")
+)
+TAGS_LEGEND_MD_RU = "\n\n".join(
+    f"**{_CAT_NAMES_RU[c]}**\n" + "\n".join(f"- `<|{c}:{v}|>` — {TAG_DESC_RU.get(v, '')}" for v in sorted(dr.WHITELIST[c]))
+    for c in ("emotion", "prosody", "style", "sfx")
+)
 
 # ----------------------------------------------------------------------------
-# i18n (gr.I18n, регистрируется в launch(i18n=))
+# i18n (gr.I18n, registered in launch(i18n=))
 # ----------------------------------------------------------------------------
 _RU = {
     "tab_tts": "🎙️ Озвучка", "tab_expr": "🎭 Экспрессия + Режиссёр", "tab_clone": "🧬 Клонирование",
@@ -180,7 +230,7 @@ _RU = {
     "ph_clone_tr": "Что произносится в референсе…", "voice_preset": "Пресет голоса",
     "refresh": "🔄 Обновить", "transcribe_btn": "📝 Распознать транскрипт",
     "seed": "Сид (-1 = случайно)", "max_tokens": "Макс. токенов",
-    "examples": "Примеры", "tags_help": "❓ Все теги (подсказка)", "tags_legend": _LEGEND_RU,
+    "examples": "Примеры", "tags_help": "❓ Все теги (подсказка)", "tags_legend": TAGS_LEGEND_MD_RU,
     "ph_clone": "Текст, который произнесёт клонированный голос…",
     "cloud_title": "☁️ Скачать голоса с сервера (русский пак)", "cloud_status": "Статус",
     "load_list": "Обновить список", "cloud_voices": "Доступные голоса", "download_sel": "⬇️ Скачать выбранные",
@@ -205,15 +255,15 @@ _EN = {
     "quant_info": "⚗️ Experimental: quantization (4/8-bit) saves VRAM but audibly degrades quality. Keep bf16 for best quality.",
     "out_format": "Output format",
     "cat_emotion": "😊 Emotion (per sentence)", "cat_prosody": "🎵 Prosody", "cat_style": "🎭 Style", "cat_sfx": "🔊 Sounds (inline)",
-    "download_all": "⬇️ Download all 700+",
+    "download_all": "⬇️ Download all presets",
     "enrich": "✨ Enrich text", "auto_enrich": "✨ Auto-enrich prompt with director",
     "ref_voice": "Reference audio (voice)", "ref_text": "Reference transcript (auto-filled)",
     "ph_clone_tr": "What the reference says…", "voice_preset": "Voice preset",
     "refresh": "🔄 Refresh", "transcribe_btn": "📝 Transcribe reference",
     "seed": "Seed (-1 = random)", "max_tokens": "Max tokens",
-    "examples": "Examples", "tags_help": "❓ All tags (legend)", "tags_legend": _LEGEND_EN,
+    "examples": "Examples", "tags_help": "❓ All tags (legend)", "tags_legend": TAGS_LEGEND_MD_EN,
     "ph_clone": "Text the cloned voice will speak…",
-    "cloud_title": "☁️ Download voices from server (Russian pack)", "cloud_status": "Status",
+    "cloud_title": "☁️ Download cloud voice presets", "cloud_status": "Status",
     "load_list": "Refresh list", "cloud_voices": "Available voices", "download_sel": "⬇️ Download selected",
     "refresh_voices": "🔄 Refresh voice list",
     "num_speakers": "Number of speakers", "pod_hint": "Describe a topic — the director writes a dialogue. Then set speaker voices and synthesize.",
@@ -238,15 +288,12 @@ HEAD_SCRIPT = """
 (function(){
   var lang;
   try { lang = new URL(window.location).searchParams.get('__lang'); } catch(e) { lang = null; }
-  if (!lang) return;  // нет ?__lang= → язык браузера (дефолт Gradio)
-  // navigator override (геттером — стабильный API) для встроенных строк Gradio
+  if (!lang) return;
   try {
     Object.defineProperty(navigator, 'language',  {get: function(){ return lang; }, configurable: true});
     Object.defineProperty(navigator, 'languages', {get: function(){ return [lang]; }, configurable: true});
     document.documentElement.lang = lang;
   } catch(e) {}
-  // Главный рычаг: writable-стор локали svelte-i18n. Находим ПО ФОРМЕ (subscribe+set, значение —
-  // строка-локаль), НЕ по минифицированному имени (оно меняется между сборками Gradio). set() ретранслирует UI.
   var sp = null;
   function getStore(){
     if (sp) return sp;
@@ -279,6 +326,12 @@ HEAD_SCRIPT = """
 """
 
 CSS = """
+.gradio-container, .gradio-container * {
+  font-family: Arial, Helvetica, sans-serif !important;
+}
+.gradio-container code, .gradio-container pre, .gradio-container kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+}
 .gradio-container {max-width: 1080px !important; margin: auto !important;}
 .brand-header { position: relative; }
 .brand-box { background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 50%, #7e22ce 100%);
@@ -311,80 +364,60 @@ CSS = """
 .donate-row > code { flex:1; text-align:left; background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px; font-size:11px; color:#e5e7eb; user-select:all; }
 .donate-intro { color:#cbd5e1; font-size:12px; line-height:1.5; margin:0 0 4px 0; }
 .donate-sep { height:1px; background:rgba(255,255,255,0.1); margin:6px 0; }
-/* Тёмные рамки/инпуты (Gradio Soft на тёмном фоне даёт светлые border-vars) + ползунок */
 .gradio-container { --block-border-color: rgba(255,255,255,0.10) !important;
   --border-color-primary: rgba(255,255,255,0.10) !important;
   --input-border-color: rgba(255,255,255,0.10) !important;
   --neutral-200: rgba(255,255,255,0.10) !important; }
 .gradio-container .block { border-color: rgba(255,255,255,0.10) !important; }
 .gradio-container input[type=range] { accent-color: #7c3aed; }
-/* Теги-чипы: ширина по тексту, перенос, без растяжения и обрезки */
 .tagbtn { flex: 0 0 auto !important; min-width: 0 !important; width: auto !important; }
 .tagbtn button { white-space: pre-line !important; line-height: 1.15 !important; height: auto !important; min-height: 0 !important; text-align: center !important; padding: 5px 11px !important; font-size: 0.8em !important; }
 .tagbtn button > * { display: block; }
 """
 
 import json as _json
-# Официальные описания тегов (bosonai/higgs-audio-v3-tts-4b) — для тултипов и легенды.
-TAG_DESC = {
-    "affection": "Теплота, нежность", "amusement": "Веселье, игривый смешок", "anger": "Гнев",
-    "arousal": "Обострённое желание", "awe": "Благоговение, восхищение", "bitterness": "Горечь",
-    "confusion": "Растерянность", "contemplation": "Задумчивость, рефлексия", "contentment": "Спокойное удовлетворение",
-    "determination": "Решимость, твёрдость", "disgust": "Отвращение", "elation": "Ликование, радость",
-    "enthusiasm": "Энтузиазм, воодушевление", "fear": "Страх", "helplessness": "Беспомощность",
-    "longing": "Тоска, томление", "pride": "Гордость, уверенность", "relief": "Облегчение",
-    "sadness": "Грусть", "shame": "Стыд", "surprise": "Удивление",
-    "speed_very_slow": "Очень медленно (≈0.65×)", "speed_slow": "Медленно (≈0.85×)",
-    "speed_fast": "Быстро (≈1.2×)", "speed_very_fast": "Очень быстро (≈1.4×)",
-    "pitch_low": "Ниже тон (≈−3 полутона)", "pitch_high": "Выше тон (≈+2.5 полутона)",
-    "expressive_high": "Выразительнее", "expressive_low": "Ровнее, монотоннее",
-    "pause": "Пауза ≈400–700 мс (по месту)", "long_pause": "Длинная пауза ≈700–1500 мс (по месту)",
-    "singing": "Пение", "shouting": "Крик, посыл голоса", "whispering": "Шёпот",
-    "cough": "Кашель (звук: кхм)", "laughter": "Смех (ха-ха)", "crying": "Плач (ыыы)",
-    "screaming": "Крик (ааа)", "burping": "Отрыжка", "humming": "Мычание (ммм)",
-    "sigh": "Вздох (эх)", "sniff": "Шмыганье носом", "sneeze": "Чихание (апчхи)",
-}
-TAG_RU = {k: v.split(",")[0].split(" (")[0].strip() for k, v in TAG_DESC.items()}
-_CAT_NAMES = {"emotion": "😊 Эмоции (в начало предложения)", "prosody": "🎵 Просодия",
-              "style": "🎭 Стиль (в начало)", "sfx": "🔊 Звуки (по месту, рядом со звукоподражанием)"}
-TAGS_LEGEND_MD = "\n\n".join(
-    f"**{_CAT_NAMES[c]}**\n" + "\n".join(f"- `<|{c}:{v}|>` — {TAG_DESC.get(v, '')}" for v in sorted(dr.WHITELIST[c]))
-    for c in ("emotion", "prosody", "style", "sfx")
-)
+
 DARK_JS = ("""
 () => {
   try { const u=new URL(window.location);
     if(u.searchParams.get('__theme')!=='dark' && !sessionStorage.getItem('_hgs_dark')){
       sessionStorage.setItem('_hgs_dark','1'); u.searchParams.set('__theme','dark'); window.location.replace(u.href); return;
     } } catch(e){}
-  const TD = __TAGDESC__;
-  const apply = () => document.querySelectorAll('.tagbtn button').forEach(b => { const k=(b.textContent||'').trim().split(/[\\s\\n]+/).find(x => TD[x]); if(k) b.title = TD[k]; });
+  const TD_EN = __TAGDESC_EN__;
+  const TD_RU = __TAGDESC_RU__;
+  const apply = () => {
+    let isRu = false;
+    try { isRu = new URL(window.location).searchParams.get('__lang') === 'ru'; } catch(e){}
+    const TD = isRu ? TD_RU : TD_EN;
+    document.querySelectorAll('.tagbtn button').forEach(b => {
+      const k = (b.textContent||'').trim().split(/[\\s\\n]+/)[0];
+      if (k && TD[k]) b.title = TD[k];
+    });
+  };
   apply(); setInterval(apply, 1200);
 }
-""").replace("__TAGDESC__", _json.dumps(TAG_DESC, ensure_ascii=False))
+""").replace("__TAGDESC_EN__", _json.dumps(TAG_DESC_EN, ensure_ascii=False)).replace("__TAGDESC_RU__", _json.dumps(TAG_DESC_RU, ensure_ascii=False))
 
 TTS_EXAMPLES = [
-    ["Привет! Это Higgs Audio Studio — локальная озвучка на ста языках."],
-    ["<|emotion:elation|>Невероятно, у нас получилось! <|sfx:laughter|>ха-ха-ха!"],
-    ["<|style:whispering|>Подойди ближе, я расскажу секрет."],
-    ["Hello! This model speaks over a hundred languages, fully offline."],
+    ["Hello! This is Higgs Audio Studio — local speech synthesis in over 100 languages."],
+    ["<|emotion:elation|>Incredible, we did it! <|sfx:laughter|>ha-ha-ha!"],
+    ["<|style:whispering|>Come closer, I will tell you a secret."],
+    ["This model delivers high-fidelity expressive voice generation fully offline."],
 ]
 EXPR_EXAMPLES = [
-    ["<|emotion:sadness|>Мне очень жаль, что так вышло. <|prosody:long_pause|> Но мы справимся."],
-    ["<|emotion:anger|>Сколько можно это терпеть?! <|sfx:sigh|>эх…"],
-    ["<|style:shouting|>Поднажми! Финиш уже совсем близко!"],
+    ["<|emotion:sadness|>I am so sorry that it happened this way. <|prosody:long_pause|> But we will get through this."],
+    ["<|emotion:anger|>How much longer do we have to endure this?! <|sfx:sigh|>sigh…"],
+    ["<|style:shouting|>Keep pushing! The finish line is right ahead!"],
 ]
-POD_TOPICS = [["Плюсы и минусы локального ИИ дома"], ["Как нейросети меняют музыку"],
-              ["Будущее голосовых ассистентов"]]
-BOOK_EXAMPLES = [["Старый маяк молчал уже много лет. — Здесь кто-нибудь есть? — крикнул Том, "
-                  "поднимаясь по скрипучей лестнице. Ответом была лишь тишина."]]
+POD_TOPICS = [["Pros and cons of local AI at home"], ["How AI is changing music production"],
+              ["The future of voice assistants"]]
+BOOK_EXAMPLES = [["The old lighthouse had been silent for years. 'Is anybody here?' Tom called out as he climbed the creaking spiral stairs. Only silence answered."]]
 
 
 # ----------------------------------------------------------------------------
-# Хелперы
+# Helpers
 # ----------------------------------------------------------------------------
-_OUT_FORMAT = "mp3"  # как в VoxCPM2: компактный mp3 по умолчанию
-# формат → (контейнер soundfile, subtype). MP3/OGG/FLAC/WAV поддержаны libsndfile 0.14 в сборке.
+_OUT_FORMAT = "mp3"
 _FMT = {"wav": ("WAV", None), "mp3": ("MP3", None), "flac": ("FLAC", None), "ogg": ("OGG", "VORBIS")}
 
 
@@ -404,7 +437,9 @@ def _safe_audio_output(sr, wav, ctx="tts"):
     if not _has_audio(wav):
         print(f"[{ctx}] empty audio result; returning None to Gradio to avoid crash", flush=True)
         return None
-    return sr, wav
+    import numpy as np
+    wav_int16 = (np.clip(wav, -1.0, 1.0) * 32767.0).astype(np.int16)
+    return sr, wav_int16
 
 
 def _save(sr, wav, prefix="tts"):
@@ -418,7 +453,7 @@ def _save(sr, wav, prefix="tts"):
     try:
         sf.write(str(path), wav, sr, format=container, subtype=subtype)
     except Exception as e:
-        print(f"[save] формат {fmt} не записался ({e}) → wav")
+        print(f"[save] format {fmt} could not be written ({e}) → wav")
         path = OUTPUT_DIR / f"{prefix}_{stamp}.wav"
         sf.write(str(path), wav, sr)
     return str(path)
@@ -450,8 +485,8 @@ def voice_transcript(name):
 
 
 def cb_preset(name):
-    """Пресет → подставить его аудио + транскрипт (как VoxCPM2/Qwen3-TTS)."""
-    if not name or name == OWN_FILE:
+    """Preset -> populate audio + transcript."""
+    if not name or name == OWN_FILE or name.startswith("—"):
         return None, ""
     return voice_path(name), voice_transcript(name)
 
@@ -473,7 +508,7 @@ def transcribe(ref_audio):
     if not ref_audio:
         return gr.update()
     if eng._MOCK:
-        return "пример транскрипта (mock)"
+        return "sample transcript (mock)"
     try:
         import torch
         import soundfile as sf
@@ -497,7 +532,7 @@ _SPK_PATTERNS = [r'^speaker\s*(\d+)\s*:\s*(.+)$', r'^диктор\s*(\d+)\s*:\s*
 
 
 def parse_script(script):
-    """'Speaker N: текст' (или Диктор/Голос/[N]) → [(speaker_id, text)]; нераспознанное → Speaker 0."""
+    """'Speaker N: text' (or [N]) → [(speaker_id, text)]; unrecognized lines → Speaker 0."""
     out = []
     for line in (script or "").strip().splitlines():
         line = line.strip()
@@ -516,7 +551,7 @@ def parse_script(script):
 
 
 def _chunk(text, max_chars=120):
-    """Длинный текст → куски (абзацы; длинные — по предложениям) для long-form."""
+    """Chunk long text (paragraphs, then sentences) for long-form synthesis."""
     text = (text or "").strip()
     if not text:
         return []
@@ -538,7 +573,7 @@ def _chunk(text, max_chars=120):
 
 
 def _speak(text, ref_audio=None, ref_text=None, **kw):
-    """Короткий текст — одним проходом, длинный — long-form с переносом голоса."""
+    """Short text -> single pass; long text -> long-form with timbre transfer."""
     chunks = _chunk(text)
     if len(chunks) <= 1:
         return eng.generate(text, ref_audio=ref_audio, ref_text=ref_text, **kw)
@@ -546,7 +581,7 @@ def _speak(text, ref_audio=None, ref_text=None, **kw):
 
 
 def cb_load_cloud():
-    """Список облачных голосов (HF dataset Slait/russia_voices)."""
+    """List cloud voice presets (Slait/russia_voices dataset)."""
     voices = []
     try:
         from huggingface_hub import list_repo_files
@@ -554,20 +589,19 @@ def cb_load_cloud():
         voices = sorted(f[:-4] for f in files if f.endswith(".mp3"))
     except Exception as e:
         print(f"[voices] list: {e}")
-    status = f"Найдено / Found: {len(voices)}" if voices else "Не удалось загрузить / Failed"
+    status = f"Found: {len(voices)}" if voices else "Failed to load"
     return status, gr.update(choices=voices, value=[])
 
 
 def _dl_voice(name):
-    """Скачать один облачный голос через huggingface_hub (httpx-бэкенд, без сырого
-    requests/urllib3 — обходит баг urllib3-future hface http2). .txt не обязателен."""
+    """Download a single cloud voice preset via huggingface_hub."""
     from huggingface_hub import hf_hub_download
     try:
         hf_hub_download(CLOUD_VOICES_REPO, f"{name}.mp3", repo_type="dataset", local_dir=str(VOICES_DIR))
         try:
             hf_hub_download(CLOUD_VOICES_REPO, f"{name}.txt", repo_type="dataset", local_dir=str(VOICES_DIR))
         except Exception:
-            pass  # транскрипт не обязателен (или его нет в датасете)
+            pass
         return True
     except Exception as e:
         print(f"[voices] dl {name}: {e}")
@@ -576,30 +610,30 @@ def _dl_voice(name):
 
 def cb_download_voices(selected):
     if not selected:
-        return "Выберите голоса / Select voices", gr.update()
+        return "Select voices", gr.update()
     ok = sum(_dl_voice(n) for n in selected)
-    return f"Скачано / Downloaded: {ok}/{len(selected)}", gr.update(choices=[OWN_FILE] + scan_voices())
+    return f"Downloaded: {ok}/{len(selected)}", gr.update(choices=[OWN_FILE] + scan_voices())
 
 
 def cb_download_all_cloud(progress=gr.Progress()):
-    """Скачать ВСЮ облачную коллекцию (Slait/russia_voices, 700+ голосов)."""
+    """Download the full cloud voice library."""
     try:
         from huggingface_hub import list_repo_files
         names = sorted(f[:-4] for f in list_repo_files(CLOUD_VOICES_REPO, repo_type="dataset") if f.endswith(".mp3"))
     except Exception as e:
-        return f"Ошибка списка / List error: {e}", gr.update()
+        return f"List error: {e}", gr.update()
     if not names:
-        return "Список пуст / Empty list", gr.update()
+        return "Empty list", gr.update()
     ok = 0
     for i, name in enumerate(names):
         progress((i + 1) / len(names), desc=f"{i + 1}/{len(names)} · {name}")
         if _dl_voice(name):
             ok += 1
-    return f"Скачано / Downloaded: {ok}/{len(names)}", gr.update(choices=[OWN_FILE] + scan_voices())
+    return f"Downloaded: {ok}/{len(names)}", gr.update(choices=[OWN_FILE] + scan_voices())
 
 
 # ----------------------------------------------------------------------------
-# Колбэки
+# Callbacks
 # ----------------------------------------------------------------------------
 def _maybe_enrich(text, model, auto):
     return dr.enrich(text, model) if auto else text
@@ -635,7 +669,7 @@ def cb_expr(text, model, auto):
 def cb_clone(text, model, auto, ref_audio, ref_text, preset, temperature, top_p, seed):
     eng.clear_cancel()
     text = _maybe_enrich(text, model, auto)
-    ref = ref_audio or (voice_path(preset) if preset and preset != OWN_FILE else None)
+    ref = ref_audio or (voice_path(preset) if preset and preset != OWN_FILE and not preset.startswith("—") else None)
     sr, wav = _speak(text, ref_audio=ref, ref_text=ref_text, temperature=temperature, top_p=top_p, seed=seed)
     audio = _safe_audio_output(sr, wav, ctx="clone")
     if audio is None:
@@ -653,8 +687,7 @@ def cb_book_markup(text, num, model):
 
 
 def cb_multi_synth(script, a0, a1, a2, a3, t0, t1, t2, t3, progress=gr.Progress()):
-    """Парсим 'Speaker N:' → синтез каждой реплики голосом диктора N → склейка с нормализацией.
-    eng._concat выравнивает громкость спикеров (LUFS −16) + пик-лимит, иначе один тише другого."""
+    """Parse 'Speaker N:' → synthesize turns with speaker voice N → concat with normalization."""
     eng.clear_cancel()
     audios = [a0, a1, a2, a3]
     texts = [t0, t1, t2, t3]
@@ -682,7 +715,7 @@ def cb_batch(texts, model, auto, progress=gr.Progress()):
     log, paths = [], []
     for i, line in enumerate(lines):
         if eng.cancelled():
-            yield "\n".join(log) + "\n\n⏹ Остановлено / Stopped.", paths
+            yield "\n".join(log) + "\n\n⏹ Stopped.", paths
             return
         progress((i + 1) / max(len(lines), 1), desc=f"{i + 1}/{len(lines)}")
         if auto:
@@ -693,21 +726,19 @@ def cb_batch(texts, model, auto, progress=gr.Progress()):
             paths.append(p)
         log.append(f"✓ {i + 1}. {line[:60]}")
         yield "\n".join(log), paths
-    yield "\n".join(log) + "\n\nГотово / Done.", paths
+    yield "\n".join(log) + "\n\nDone.", paths
 
 
 # ----------------------------------------------------------------------------
-# UI
+# UI Layout
 # ----------------------------------------------------------------------------
 def _speaker_blocks():
-    """4 блока диктора (пресет + аудио + транскрипт), показ по слайдеру. Возвращает (slider, audios, texts)."""
+    """4 speaker blocks (preset + audio + transcript), visibility by slider."""
     with gr.Row():
         num = gr.Slider(2, MAX_SPK, value=2, step=1, label=T("num_speakers"))
         refresh = gr.Button(T("refresh_voices"), size="sm", scale=0)
     choices = [OWN_FILE] + scan_voices()
     blocks, audios, texts, pres = [], [], [], []
-    # Блоки дикторов — вертикально, друг под другом (как в Qwen3-TTS Multi-speaker).
-    # Side-by-side в gr.Row давал мигание: тяжёлые waveform конкурировали по ширине.
     for i in range(MAX_SPK):
         with gr.Group(visible=(i < 2), elem_classes="spk-block") as bl:
             gr.Markdown(f"**Speaker {i}**")
@@ -728,16 +759,16 @@ def build():
     with gr.Blocks(title=APP_NAME) as demo:
         gr.HTML(T("brand_header_html"))
         model_dd = gr.Dropdown(MODEL_CHOICES, value=dr.DEFAULT_MODEL, label=T("director_model"))
-        quant_dd = gr.Dropdown([("bf16 — макс. качество (дефолт)", "bf16"),
-                                ("4-bit (nf4) ⚗️ эксперим. — качество ниже", "4bit"),
-                                ("8-bit ⚗️ эксперим. — качество ниже", "8bit")],
+        quant_dd = gr.Dropdown([("bf16 — max quality (default)", "bf16"),
+                                ("4-bit (nf4) ⚗️ experimental — lower quality", "4bit"),
+                                ("8-bit ⚗️ experimental — lower quality", "8bit")],
                                value="bf16", label=T("quant"), info=T("quant_info"))
         quant_dd.change(lambda p: eng.set_precision(p), [quant_dd], None)
         fmt_dd = gr.Radio(["mp3", "wav", "flac", "ogg"], value="mp3", label=T("out_format"))
         fmt_dd.change(set_out_format, [fmt_dd], None)
 
         with gr.Tabs():
-            # 1. Озвучка
+            # 1. TTS
             with gr.Tab(T("tab_tts")):
                 with gr.Row():
                     with gr.Column():
@@ -757,7 +788,7 @@ def build():
                                      [t_out, t_text])
                 t_stop.click(eng.request_cancel, None, None, queue=False, cancels=[ev_tts])
 
-            # 2. Экспрессия + Режиссёр
+            # 2. Expressive + Director
             with gr.Tab(T("tab_expr")):
                 e_text = gr.Textbox(label=T("text"), placeholder=T("ph_text"), lines=5)
                 e_auto = gr.Checkbox(label=T("auto_enrich"), value=False)
@@ -766,7 +797,7 @@ def build():
                     gr.Markdown(f"**{clabel}**")
                     with gr.Row():
                         for val in sorted(dr.WHITELIST[cat]):
-                            gr.Button(f"{TAG_RU.get(val, val)}\n{val}", size="sm", elem_classes=["tagbtn"]).click(
+                            gr.Button(f"{val}", size="sm", elem_classes=["tagbtn"]).click(
                                 lambda t, c=cat, v=val: (t or "") + f"<|{c}:{v}|>", [e_text], [e_text])
                 with gr.Row():
                     e_enrich = gr.Button(T("enrich"), variant="secondary")
@@ -775,12 +806,12 @@ def build():
                 e_out = gr.Audio(label=T("result"), type="numpy", autoplay=True)
                 gr.Examples(EXPR_EXAMPLES, inputs=[e_text], label=T("examples"))
                 with gr.Accordion(T("tags_help"), open=True):
-                    gr.Markdown(TAGS_LEGEND_MD)
+                    gr.Markdown(T("tags_legend"))
                 e_enrich.click(cb_enrich, [e_text, model_dd], [e_text])
                 ev_expr = e_btn.click(cb_expr, [e_text, model_dd, e_auto], [e_out, e_text])
                 e_stop.click(eng.request_cancel, None, None, queue=False, cancels=[ev_expr])
 
-            # 3. Клонирование
+            # 3. Voice Cloning
             with gr.Tab(T("tab_clone")):
                 with gr.Row():
                     with gr.Column():
@@ -814,7 +845,7 @@ def build():
                                        [c_out, c_text])
                 c_stop.click(eng.request_cancel, None, None, queue=False, cancels=[ev_clone])
 
-            # 4. Подкаст (мульти-спикер, формат Speaker N:)
+            # 4. Podcast
             with gr.Tab(T("tab_pod")):
                 gr.Markdown(T("pod_hint"))
                 gr.Markdown(T("pod_format"))
@@ -831,7 +862,7 @@ def build():
                 ev_pod = p_btn.click(cb_multi_synth, [p_script] + p_audios + p_texts, p_out)
                 p_stop.click(eng.request_cancel, None, None, queue=False, cancels=[ev_pod])
 
-            # 5. Аудиокнига (мульти-спикер: Speaker 0 — рассказчик)
+            # 5. Audiobook
             with gr.Tab(T("tab_book")):
                 gr.Markdown(T("book_hint"))
                 gr.Markdown(T("book_format"))
@@ -848,7 +879,7 @@ def build():
                 ev_book = b_btn.click(cb_multi_synth, [b_script] + b_audios + b_texts, b_out)
                 b_stop.click(eng.request_cancel, None, None, queue=False, cancels=[ev_book])
 
-            # 6. Пакет
+            # 6. Batch
             with gr.Tab(T("tab_batch")):
                 bt_text = gr.Textbox(label=T("batch_text"), placeholder=T("ph_batch"), lines=6)
                 bt_auto = gr.Checkbox(label=T("auto_enrich"), value=False)
@@ -863,19 +894,19 @@ def build():
 
 
 def prewarm():
-    """Компиляция обоих путей (обычный + клон) в ГЛАВНОМ потоке до старта сервера —
-    первая компиляция в рабочем потоке gradio роняет процесс (особенно на клон-пути)."""
+    """Compilation of both paths (standard + clone) in the MAIN thread before server launch —
+    first compilation in a gradio worker thread crashes the process (especially on the clone path)."""
     if eng._MOCK:
         return
     try:
-        print("[prewarm] прогрев + компиляция в главном потоке (~1-3 мин, разово)...", flush=True)
-        eng.generate("Прогрев системы озвучки.")
+        print("[prewarm] warming up + compiling in main thread (~1-3 min, one-time)...", flush=True)
+        eng.generate("Warming up speech synthesis system.")
         vs = scan_voices()
         if vs:
-            eng.generate("Прогрев клонирования голоса.", ref_audio=voice_path(vs[0]))
-        print("[prewarm] готово — генерации будут быстрыми и стабильными", flush=True)
+            eng.generate("Warming up voice cloning.", ref_audio=voice_path(vs[0]))
+        print("[prewarm] ready — generations will be fast and stable", flush=True)
     except Exception as e:
-        print(f"[prewarm] пропущен ({e})", flush=True)
+        print(f"[prewarm] skipped ({e})", flush=True)
 
 
 if __name__ == "__main__":
@@ -884,5 +915,5 @@ if __name__ == "__main__":
     build().queue(default_concurrency_limit=1).launch(
         server_port=None,
         inbrowser=(not eng._MOCK and os.environ.get("NO_AUTO_BROWSER", "").lower() not in ("1", "true", "yes")),
-        i18n=I18N, theme=gr.themes.Soft(primary_hue="indigo", secondary_hue="purple"),
+        i18n=I18N, theme=gr.themes.Soft(primary_hue="indigo", secondary_hue="purple", font=["Arial", "Helvetica", "sans-serif"]),
         css=CSS, js=DARK_JS, head=HEAD_SCRIPT, show_error=True)

@@ -1,13 +1,14 @@
-"""AI-режиссёр текста — выполняется в ОТДЕЛЬНОМ GPU-процессе (изоляция CUDA-рантайма от torch).
+"""AI text director — runs in a SEPARATE GPU process (isolating the CUDA runtime from torch).
 
-Почему процесс, а не in-process: llama.cpp (сборка cu124) и torch (cu126/cu128) в одном процессе
-делят cublas64_12.dll по ИМЕНИ — Windows держит один модуль на процесс, версии разъезжаются →
-"CUDA error: invalid argument". Подобрать совпадающие сборки нельзя (у abetlen llama макс cu124,
-у torch 2.7.1 нет cu124). Поэтому режиссёр живёт в своём процессе со своим cublas 12.4.
-РАБОТАЕТ НА GPU (n_gpu_layers=-1) — отдельный процесс != CPU, скорость полная. Воркер
-короткоживущий: грузит модель, отвечает и завершается, освобождая VRAM перед TTS.
+Why a separate process instead of in-process: llama.cpp (cu124 build) and torch (cu126/cu128)
+in the same process share cublas64_12.dll by NAME — Windows keeps one loaded module per process,
+and conflicting versions cause "CUDA error: invalid argument". Matching builds are not feasible
+(abetlen's llama wheels max out at cu124, while torch 2.7.1 lacks cu124).
+Therefore, the director runs in its own process with its own cuBLAS 12.4.
+RUNS ON GPU (n_gpu_layers=-1) — separate process != CPU; full speed is retained. The worker
+is short-lived: it loads the model, generates the response, and exits, releasing VRAM before TTS.
 
-filter_tags / WHITELIST / MODELS — чистый Python (без llama/GPU), нужны UI и тестам.
+filter_tags / WHITELIST / MODELS — pure Python (no llama/GPU), used by UI and tests.
 """
 import os
 import re
@@ -33,7 +34,7 @@ _VALID = re.compile(r"<\|(\w+):(\w+)\|>")
 
 
 def filter_tags(text):
-    """Оставить ТОЛЬКО валидные <|cat:val|> из белого списка; вырезать прочие угловые конструкции."""
+    """Keep ONLY valid <|cat:val|> from whitelist; strip other angle-bracket patterns."""
     if not text:
         return text
 
@@ -47,25 +48,25 @@ def filter_tags(text):
     return _ANGLE.sub(repl, text)
 
 
-MODELS = {  # GGUF (llama.cpp, GPU): качается 4-бит Q4_K_M
-    "Qwen3.5-9B · Q4_K_M (дефолт, ~5.5 ГБ)": ("unsloth/Qwen3.5-9B-GGUF", "Qwen3.5-9B-Q4_K_M.gguf"),
-    "Qwen3.5-4B · Q4_K_M (лёгкая, ~2.5 ГБ)": ("unsloth/Qwen3.5-4B-GGUF", "Qwen3.5-4B-Q4_K_M.gguf"),
+MODELS = {  # GGUF (llama.cpp, GPU): downloads 4-bit Q4_K_M
+    "Qwen3.5-9B · Q4_K_M (default, ~5.5 GB)": ("unsloth/Qwen3.5-9B-GGUF", "Qwen3.5-9B-Q4_K_M.gguf"),
+    "Qwen3.5-4B · Q4_K_M (light, ~2.5 GB)": ("unsloth/Qwen3.5-4B-GGUF", "Qwen3.5-4B-Q4_K_M.gguf"),
 }
-DEFAULT_MODEL = "Qwen3.5-9B · Q4_K_M (дефолт, ~5.5 ГБ)"
+DEFAULT_MODEL = "Qwen3.5-9B · Q4_K_M (default, ~5.5 GB)"
 
 _lock = threading.Lock()
 
 
 def _call(action, text, label=DEFAULT_MODEL, n=2):
-    """Запустить воркер режиссёра (отдельный GPU-процесс), отдать запрос, получить результат.
-    Воркер завершается сам → его VRAM и CUDA-контекст освобождаются до старта TTS."""
+    """Launch director worker (separate GPU process), send request, receive result.
+    Worker terminates on its own -> its VRAM and CUDA context are freed before TTS starts."""
     if _MOCK:
         return text
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "director_worker.py")
     req = json.dumps({"action": action, "text": text, "label": label, "n": n}, ensure_ascii=False)
-    # GPU НЕ глушим — режиссёр на GPU. В этом процессе нет torch, llama берёт свой cublas 12.4.
-    # stderr → консоль (наследуется): логи и прогресс скачивания видны, пайп не копится.
-    with _lock:  # один воркер за раз — не грузим две модели на GPU параллельно
+    # GPU is NOT disabled — director runs on GPU. This process contains no torch; llama uses its own cuBLAS 12.4.
+    # stderr -> console (inherited): logs and download progress are visible, pipe buffer does not fill up.
+    with _lock:  # one worker at a time — avoid loading two models on GPU concurrently
         proc = subprocess.run(
             [sys.executable, script],
             input=req, stdout=subprocess.PIPE, stderr=None,
@@ -73,23 +74,23 @@ def _call(action, text, label=DEFAULT_MODEL, n=2):
         )
     out = (proc.stdout or "").strip()
     if not out:
-        raise RuntimeError(f"режиссёр-воркер не ответил (код {proc.returncode}) — смотри лог в консоли")
-    data = json.loads(out.splitlines()[-1])  # последняя строка stdout — JSON-ответ
+        raise RuntimeError(f"director worker did not respond (code {proc.returncode}) — see console log")
+    data = json.loads(out.splitlines()[-1])  # last stdout line is the JSON response
     if not data.get("ok"):
-        raise RuntimeError(data.get("error", "режиссёр: неизвестная ошибка"))
+        raise RuntimeError(data.get("error", "director: unknown error"))
     return data["result"]
 
 
 def enrich(text, label=DEFAULT_MODEL):
-    """РОЛЬ A — нормализация под произношение + лёгкая правка + теги по смыслу."""
+    """ROLE A — normalization for pronunciation + light cleanup + tags according to meaning."""
     return _call("enrich", text, label)
 
 
 def write_podcast(topic, n_speakers=2, label=DEFAULT_MODEL):
-    """РОЛЬ B — мульти-спикерный диалог в индексном формате 'Speaker N: реплика'."""
+    """ROLE B — multi-speaker dialogue in indexed format 'Speaker N: line'."""
     return _call("podcast", topic, label, n=max(2, int(n_speakers)))
 
 
 def cast_audiobook(text, n_voices=2, label=DEFAULT_MODEL):
-    """РОЛЬ C — атрибуция: Speaker 0 = рассказчик, 1.. = персонажи."""
+    """ROLE C — attribution: Speaker 0 = narrator, 1.. = characters."""
     return _call("audiobook", text, label, n=max(2, int(n_voices)))

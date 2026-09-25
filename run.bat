@@ -10,22 +10,22 @@ set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 
 if not exist "python\python.exe" (
-    echo ОШИБКА: Python не найден! Запустите install.bat
+    echo ERROR: Python not found! Please run install.bat
     pause
     exit /b 1
 )
 if not exist "app.py" (
-    echo ОШИБКА: app.py не найден!
+    echo ERROR: app.py not found!
     pause
     exit /b 1
 )
 
 if exist "cuda_version.txt" (
     set /p CUDA_VERSION=<cuda_version.txt
-    echo Конфигурация: !CUDA_VERSION!
+    echo Configuration: !CUDA_VERSION!
 )
 
-REM === ИЗОЛЯЦИЯ: все кэши/модели/temp внутри папки приложения ===
+REM === ISOLATION: all cache/models/temp directories inside the application folder ===
 set "TEMP=%SCRIPT_DIR%temp"
 set "TMP=%SCRIPT_DIR%temp"
 set "GRADIO_TEMP_DIR=%SCRIPT_DIR%temp"
@@ -50,15 +50,15 @@ set PYTHONIOENCODING=utf-8
 set PYTHONUNBUFFERED=1
 set GGML_CUDA_NO_PINNED=1
 
-echo Запуск приложения...
+echo Starting application...
 python\python.exe app.py
 
 if errorlevel 1 (
     echo.
-    echo ОШИБКА при запуске! Возможные причины:
-    echo  1. Не установлены зависимости - запустите install.bat
-    echo  2. Недостаточно VRAM - выберите модель режиссёра поменьше в UI
-    echo  3. Проблемы с CUDA-драйверами
+    echo ERROR during startup! Possible reasons:
+    echo  1. Dependencies not installed - run install.bat
+    echo  2. Insufficient VRAM - select a smaller director model in the UI
+    echo  3. CUDA driver issues
     pause
     exit /b 1
 )
